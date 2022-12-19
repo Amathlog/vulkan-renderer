@@ -1,6 +1,7 @@
 #pragma once
 
 struct GLFWwindow;
+struct VkInstance_T;
 
 class VulkanApplication
 {
@@ -14,6 +15,7 @@ public:
 private:
     int InitWindow();
     int InitVulkan();
+    int CreateInstance();
     int Cleanup();
 
     bool m_initialized = false;
@@ -21,4 +23,5 @@ private:
     int m_height;
     const char* m_windowName = "";
     GLFWwindow* m_window = nullptr;
+    VkInstance_T* m_instance = nullptr;
 };

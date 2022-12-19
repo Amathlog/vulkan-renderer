@@ -1,6 +1,9 @@
 #include <app.h>
 
+#include <cstdint>
+#include <cstring>
 #include <iostream>
+#include <vector>
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -65,10 +68,89 @@ int VulkanApplication::InitWindow()
     return 0;
 }
 
-int VulkanApplication::InitVulkan() { return 0; }
+int VulkanApplication::InitVulkan()
+{
+    if (m_initialized)
+        return 0;
+
+    CreateInstance();
+    return 0;
+}
+
+int VulkanApplication::CreateInstance()
+{
+    if (m_instance != nullptr)
+        return 0;
+
+    // Optional information about the application
+    VkApplicationInfo appInfo{};
+    appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    appInfo.pApplicationName = m_windowName;
+    appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+    appInfo.pEngineName = "No Engine";
+    appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
+    appInfo.apiVersion = VK_API_VERSION_1_0;
+
+    // Information to create a VkInstance
+    VkInstanceCreateInfo createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    createInfo.pApplicationInfo = &appInfo;
+
+    // It needs a list of extensions. We use glfw information to know all the extensions we need
+    uint32_t glfwExtensionCount = 0;
+    const char** glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
+
+    // Also gather all supported extensions by our graphic device
+    uint32_t extensionCount = 0;
+    vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
+
+    std::vector<VkExtensionProperties> extensions(extensionCount);
+    vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, extensions.data());
+
+    // Making sure all extensions required by glfw are supported
+    for (uint32_t i = 0; i < glfwExtensionCount; ++i)
+    {
+        bool found = false;
+        for (VkExtensionProperties& extensionProperties : extensions)
+        {
+            if (std::strcmp(extensionProperties.extensionName, glfwExtensions[i]) == 0)
+            {
+                found = true;
+                break;
+            }
+        }
+
+        if (!found)
+        {
+            std::cout << "Extension " << glfwExtensions[i] << " required by glfw not supported..." << std::endl;
+            return -1;
+        }
+    }
+
+    // When we verified that all extensions are supported, finish filling the create info struct
+    createInfo.enabledExtensionCount = glfwExtensionCount;
+    createInfo.ppEnabledExtensionNames = glfwExtensions;
+
+    // No validation layer for now
+    createInfo.enabledLayerCount = 0;
+
+    // Finally try to create the instance
+    if (vkCreateInstance(&createInfo, nullptr, &m_instance) != VK_SUCCESS)
+    {
+        std::cout << "Failed to create Vulkan instance" << std::endl;
+        return -1;
+    }
+
+    return 0;
+}
 
 int VulkanApplication::Cleanup()
 {
+    if (m_instance)
+    {
+        vkDestroyInstance(m_instance, nullptr);
+    }
+
     if (m_window)
     {
         glfwDestroyWindow(m_window);
