@@ -4,7 +4,7 @@
 
 int main()
 {
-    VulkanApplication app(800, 600);
+    VulkanApplication app(800, 600, "VulkanApplication");
 
     if (app.Init() != 0)
     {
