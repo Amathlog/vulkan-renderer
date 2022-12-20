@@ -1,23 +1,39 @@
 #include <app.h>
 
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
 #include <vector>
 
+#include <utils/utils.h>
+
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
-VulkanApplication::VulkanApplication(int width, int height, const char* windowName)
+using VulkanRenderer::Application;
+
+namespace Cst
+{
+constexpr std::array<const char*, 1> validationLayers = {"VK_LAYER_KHRONOS_validation"};
+
+#ifdef NDEBUG
+constexpr bool enableValidationLayers = false;
+#else
+constexpr bool enableValidationLayers = true;
+#endif
+} // namespace Cst
+
+Application::Application(int width, int height, const char* windowName)
     : m_width(width)
     , m_height(height)
     , m_windowName(windowName)
 {
 }
 
-VulkanApplication::~VulkanApplication() { Cleanup(); }
+Application::~Application() { Cleanup(); }
 
-int VulkanApplication::Init()
+int Application::Init()
 {
     if (m_initialized)
         return 0;
@@ -34,7 +50,7 @@ int VulkanApplication::Init()
     return 0;
 }
 
-int VulkanApplication::Run()
+int Application::Run()
 {
     if (!m_initialized)
         return -1;
@@ -47,7 +63,7 @@ int VulkanApplication::Run()
     return 0;
 }
 
-int VulkanApplication::InitWindow()
+int Application::InitWindow()
 {
     glfwInit();
 
@@ -68,16 +84,19 @@ int VulkanApplication::InitWindow()
     return 0;
 }
 
-int VulkanApplication::InitVulkan()
+int Application::InitVulkan()
 {
     if (m_initialized)
         return 0;
 
-    CreateInstance();
+    int res = CreateInstance();
+    if (res != 0)
+        return res;
+
     return 0;
 }
 
-int VulkanApplication::CreateInstance()
+int Application::CreateInstance()
 {
     if (m_instance != nullptr)
         return 0;
@@ -108,31 +127,49 @@ int VulkanApplication::CreateInstance()
     vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, extensions.data());
 
     // Making sure all extensions required by glfw are supported
-    for (uint32_t i = 0; i < glfwExtensionCount; ++i)
-    {
-        bool found = false;
-        for (VkExtensionProperties& extensionProperties : extensions)
-        {
-            if (std::strcmp(extensionProperties.extensionName, glfwExtensions[i]) == 0)
-            {
-                found = true;
-                break;
-            }
-        }
+    uint32_t extensionValidation = VulkanRenderer::Utils::ValidateStrings(
+        glfwExtensions, glfwExtensionCount, extensions.data(), extensionCount,
+        [](const VkExtensionProperties& extensionProperty) -> const char* { return extensionProperty.extensionName; });
 
-        if (!found)
-        {
-            std::cout << "Extension " << glfwExtensions[i] << " required by glfw not supported..." << std::endl;
-            return -1;
-        }
+    if (extensionValidation != glfwExtensionCount)
+    {
+        std::cout << "Extension " << glfwExtensions[extensionValidation] << " required by glfw not supported..."
+                  << std::endl;
+        return -1;
     }
 
-    // When we verified that all extensions are supported, finish filling the create info struct
+    // When we verified that all extensions are supported, continue filling the create info struct
     createInfo.enabledExtensionCount = glfwExtensionCount;
     createInfo.ppEnabledExtensionNames = glfwExtensions;
 
-    // No validation layer for now
-    createInfo.enabledLayerCount = 0;
+    // Do the same with validation layers
+    if constexpr (Cst::enableValidationLayers)
+    {
+        uint32_t validationLayersCount = 0;
+        vkEnumerateInstanceLayerProperties(&validationLayersCount, nullptr);
+
+        std::vector<VkLayerProperties> validationLayers(validationLayersCount);
+        vkEnumerateInstanceLayerProperties(&validationLayersCount, validationLayers.data());
+
+        uint32_t validationLayersValidation = VulkanRenderer::Utils::ValidateStrings(
+            Cst::validationLayers.data(), (uint32_t)Cst::validationLayers.size(), validationLayers.data(),
+            validationLayersCount,
+            [](const VkLayerProperties& layerProperty) -> const char* { return layerProperty.layerName; });
+
+        if (extensionValidation != glfwExtensionCount)
+        {
+            std::cout << "Extension " << glfwExtensions[extensionValidation] << " required by glfw not supported..."
+                      << std::endl;
+            return -1;
+        }
+
+        createInfo.enabledLayerCount = static_cast<uint32_t>(Cst::validationLayers.size());
+        createInfo.ppEnabledLayerNames = Cst::validationLayers.data();
+    }
+    else
+    {
+        createInfo.enabledLayerCount = 0;
+    }
 
     // Finally try to create the instance
     if (vkCreateInstance(&createInfo, nullptr, &m_instance) != VK_SUCCESS)
@@ -144,7 +181,7 @@ int VulkanApplication::CreateInstance()
     return 0;
 }
 
-int VulkanApplication::Cleanup()
+int Application::Cleanup()
 {
     if (m_instance)
     {

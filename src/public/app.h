@@ -3,11 +3,13 @@
 struct GLFWwindow;
 struct VkInstance_T;
 
-class VulkanApplication
+namespace VulkanRenderer
+{
+class Application
 {
 public:
-    VulkanApplication(int width, int height, const char* windowName);
-    ~VulkanApplication();
+    Application(int width, int height, const char* windowName);
+    ~Application();
 
     int Init();
     int Run();
@@ -25,3 +27,4 @@ private:
     GLFWwindow* m_window = nullptr;
     VkInstance_T* m_instance = nullptr;
 };
+} // namespace VulkanRenderer
