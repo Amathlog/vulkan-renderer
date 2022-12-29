@@ -7,6 +7,10 @@ namespace VulkanRenderer
 struct VulkanParameters : bsc::CommandLineParameters
 {
     bsc::Flag verbose = {{.shortKey = 'v', .longKey = "verbose", .doc = "Enable verbose log"}};
+    bsc::Parameter<int> forceSelectedDevice = {
+        {.longKey = "device",
+         .argumentName = "DEVICE",
+         .doc = "Force given physical device. Use verbose to know order of devices."}};
 
     static void Initialize(int argc, char* argv[])
     {
@@ -21,11 +25,13 @@ struct VulkanParameters : bsc::CommandLineParameters
 
     ~VulkanParameters() { delete s_instance; }
 
-    static VulkanParameters& GetInstance() { return *s_instance; }
+    static const VulkanParameters& GetInstance() { return *s_instance; }
 
 protected:
     VulkanParameters() = default;
 
     inline static VulkanParameters* s_instance = nullptr;
 };
+
+inline const VulkanParameters& Parameters() { return VulkanParameters::GetInstance(); }
 } // namespace VulkanRenderer

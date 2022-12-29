@@ -7,7 +7,9 @@
 #include <optional>
 #include <vector>
 
+#include <config.h>
 #include <utils/utils.h>
+#include <utils/verboseDump.h>
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -69,6 +71,12 @@ bool IsSuitableDevice(VkPhysicalDevice device)
     // Also gather features of the device
     VkPhysicalDeviceFeatures deviceFeatures;
     vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+
+    if (VulkanRenderer::Parameters().verbose())
+    {
+        std::cout << VulkanRenderer::Utils::PhysicalDevicePropertiesDump(deviceProperties) << std::endl;
+        std::cout << VulkanRenderer::Utils::PhysicalDeviceFeaturesDump(deviceFeatures) << std::endl;
+    }
 
     // TODO: Add more capabilities as we need it.
     QueueFamilyIndices indices = FindQueueFamilies(device);
@@ -248,16 +256,37 @@ int Application::PickPhysicalDevice()
         return -1;
     }
 
+    if (VulkanRenderer::Parameters().verbose())
+        std::cout << "Found " << nbDevicesFound << " physical devices" << std::endl;
+
     std::vector<VkPhysicalDevice> devices(nbDevicesFound);
     vkEnumeratePhysicalDevices(m_instance, &nbDevicesFound, devices.data());
 
-    for (VkPhysicalDevice device : devices)
+    int i = 0;
+    int selectedDevice = 0;
+
+    for (int i = 0; i < (int)devices.size(); ++i)
     {
-        if (!Helpers::IsSuitableDevice(device))
+        if (VulkanRenderer::Parameters().verbose())
+            std::cout << "Device " << i << ":" << std::endl;
+
+        if (!Helpers::IsSuitableDevice(devices[i]))
             continue;
 
-        m_physicalDevice = device;
-        break;
+        if (VulkanRenderer::Parameters().forceSelectedDevice.count() > 0 &&
+            VulkanRenderer::Parameters().forceSelectedDevice() != i)
+            continue;
+
+        if (m_physicalDevice == nullptr)
+        {
+            selectedDevice = i;
+            m_physicalDevice = devices[i];
+        }
+    }
+
+    if (VulkanRenderer::Parameters().verbose())
+    {
+        std::cout << "Selected device: " << selectedDevice << std::endl;
     }
 
     if (m_physicalDevice == nullptr)

@@ -7,7 +7,7 @@ int main(int argc, char* argv[])
 {
     VulkanRenderer::VulkanParameters::Initialize(argc, argv);
 
-    if (VulkanRenderer::VulkanParameters::GetInstance().verbose())
+    if (VulkanRenderer::Parameters().verbose())
     {
         std::cout << "Verbose mode" << std::endl;
     }
