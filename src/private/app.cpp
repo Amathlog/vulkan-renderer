@@ -25,9 +25,11 @@ constexpr bool enableValidationLayers = false;
 #else
 constexpr bool enableValidationLayers = true;
 #endif
+
+static const float singleQueuePriority = 1.0f;
 } // namespace Cst
 
-namespace Helpers
+namespace
 {
 struct QueueFamilyIndices
 {
@@ -82,7 +84,7 @@ bool IsSuitableDevice(VkPhysicalDevice device)
     QueueFamilyIndices indices = FindQueueFamilies(device);
     return indices.IsComplete();
 }
-} // namespace Helpers
+} // namespace
 
 Application::Application(int width, int height, const char* windowName)
     : m_width(width)
@@ -154,6 +156,10 @@ int Application::InitVulkan()
         return res;
 
     res = PickPhysicalDevice();
+    if (res != 0)
+        return res;
+
+    res = CreateLogicalDevice();
     if (res != 0)
         return res;
 
@@ -270,7 +276,7 @@ int Application::PickPhysicalDevice()
         if (VulkanRenderer::Parameters().verbose())
             std::cout << "Device " << i << ":" << std::endl;
 
-        if (!Helpers::IsSuitableDevice(devices[i]))
+        if (!IsSuitableDevice(devices[i]))
             continue;
 
         if (VulkanRenderer::Parameters().forceSelectedDevice.count() > 0 &&
@@ -298,12 +304,51 @@ int Application::PickPhysicalDevice()
     return 0;
 }
 
+int Application::CreateLogicalDevice()
+{
+    QueueFamilyIndices indices = FindQueueFamilies(m_physicalDevice);
+    VkDeviceQueueCreateInfo queueCreateInfo{};
+    queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+    queueCreateInfo.queueFamilyIndex = indices.graphicsFamily.value();
+    queueCreateInfo.queueCount = 1;
+    queueCreateInfo.pQueuePriorities = &Cst::singleQueuePriority;
+
+    // We need to ask for specific features if we want to use them.
+    // For now, not used
+    VkPhysicalDeviceFeatures deviceFeatures{};
+
+    VkDeviceCreateInfo createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    createInfo.queueCreateInfoCount = 1;
+    createInfo.pQueueCreateInfos = &queueCreateInfo;
+    createInfo.pEnabledFeatures = &deviceFeatures;
+
+    if (vkCreateDevice(m_physicalDevice, &createInfo, nullptr, &m_device) != VK_SUCCESS)
+    {
+        std::cout << "Failed to create a logical device" << std::endl;
+        return -1;
+    }
+
+    // When logical device is created, we need to get a handle on all the queues we requested
+    // 0 = Index of the queue. Requested only one, so 0.
+    vkGetDeviceQueue(m_device, indices.graphicsFamily.value(), 0, &m_graphicsQueue);
+
+    if (m_graphicsQueue == nullptr)
+    {
+        std::cout << "Failed to gather the graphics queue" << std::endl;
+        return -1;
+    }
+
+    return 0;
+}
+
 int Application::Cleanup()
 {
+    if (m_device)
+        vkDestroyDevice(m_device, nullptr);
+
     if (m_instance)
-    {
         vkDestroyInstance(m_instance, nullptr);
-    }
 
     if (m_window)
     {

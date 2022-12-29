@@ -2,7 +2,9 @@
 
 struct GLFWwindow;
 struct VkInstance_T;
+struct VkDevice_T;
 struct VkPhysicalDevice_T;
+struct VkQueue_T;
 
 namespace VulkanRenderer
 {
@@ -20,6 +22,7 @@ private:
     int InitVulkan();
     int CreateInstance();
     int PickPhysicalDevice();
+    int CreateLogicalDevice();
     int Cleanup();
 
     bool m_initialized = false;
@@ -27,7 +30,11 @@ private:
     int m_height;
     const char* m_windowName = "";
     GLFWwindow* m_window = nullptr;
+
+    // Vulkan handles
     VkInstance_T* m_instance = nullptr;
     VkPhysicalDevice_T* m_physicalDevice = nullptr;
+    VkDevice_T* m_device = nullptr;
+    VkQueue_T* m_graphicsQueue = nullptr;
 };
 } // namespace VulkanRenderer
