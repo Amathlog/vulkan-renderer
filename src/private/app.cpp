@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <optional>
 #include <vector>
 
 #include <utils/utils.h>
@@ -23,6 +24,57 @@ constexpr bool enableValidationLayers = false;
 constexpr bool enableValidationLayers = true;
 #endif
 } // namespace Cst
+
+namespace Helpers
+{
+struct QueueFamilyIndices
+{
+    std::optional<uint32_t> graphicsFamily;
+
+    bool IsComplete() const { return graphicsFamily.has_value(); }
+};
+
+QueueFamilyIndices FindQueueFamilies(VkPhysicalDevice device)
+{
+    QueueFamilyIndices indices;
+
+    uint32_t queueFamilyCount = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+
+    std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+
+    uint32_t i = 0;
+
+    for (VkQueueFamilyProperties& properties : queueFamilies)
+    {
+        if (!!(properties.queueFlags & VK_QUEUE_GRAPHICS_BIT))
+            indices.graphicsFamily = i;
+
+        if (indices.IsComplete())
+            break;
+
+        ++i;
+    }
+
+    return indices;
+}
+
+bool IsSuitableDevice(VkPhysicalDevice device)
+{
+    // Gather properties of the device
+    VkPhysicalDeviceProperties deviceProperties;
+    vkGetPhysicalDeviceProperties(device, &deviceProperties);
+
+    // Also gather features of the device
+    VkPhysicalDeviceFeatures deviceFeatures;
+    vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+
+    // TODO: Add more capabilities as we need it.
+    QueueFamilyIndices indices = FindQueueFamilies(device);
+    return indices.IsComplete();
+}
+} // namespace Helpers
 
 Application::Application(int width, int height, const char* windowName)
     : m_width(width)
@@ -90,6 +142,10 @@ int Application::InitVulkan()
         return 0;
 
     int res = CreateInstance();
+    if (res != 0)
+        return res;
+
+    res = PickPhysicalDevice();
     if (res != 0)
         return res;
 
@@ -175,6 +231,38 @@ int Application::CreateInstance()
     if (vkCreateInstance(&createInfo, nullptr, &m_instance) != VK_SUCCESS)
     {
         std::cout << "Failed to create Vulkan instance" << std::endl;
+        return -1;
+    }
+
+    return 0;
+}
+
+int Application::PickPhysicalDevice()
+{
+    uint32_t nbDevicesFound = 0;
+    vkEnumeratePhysicalDevices(m_instance, &nbDevicesFound, nullptr);
+
+    if (nbDevicesFound == 0)
+    {
+        std::cout << "Found no capable physical devices." << std::endl;
+        return -1;
+    }
+
+    std::vector<VkPhysicalDevice> devices(nbDevicesFound);
+    vkEnumeratePhysicalDevices(m_instance, &nbDevicesFound, devices.data());
+
+    for (VkPhysicalDevice device : devices)
+    {
+        if (!Helpers::IsSuitableDevice(device))
+            continue;
+
+        m_physicalDevice = device;
+        break;
+    }
+
+    if (m_physicalDevice == nullptr)
+    {
+        std::cout << "Found no suitable physical devices." << std::endl;
         return -1;
     }
 
