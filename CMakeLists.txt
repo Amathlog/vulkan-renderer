@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.21)
 
 project(VulkanRenderer)
 
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/")
+
 # Enable c++20
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -15,7 +17,7 @@ if (${CMAKE_BUILD_TYPE} STREQUAL "Debug" OR ${CMAKE_BUILD_TYPE} STREQUAL RelWith
   add_compile_definitions("_GLIBCXX_DEBUG")
 endif()
 
-set(EXTERNAL_FOLDER "external")
+set(EXTERNAL_FOLDER "${VulkanRenderer_SOURCE_DIR}/external")
 set(MAIN_FOLDER "${VulkanRenderer_SOURCE_DIR}/src")
 
 if(MSVC)
