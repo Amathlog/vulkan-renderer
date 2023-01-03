@@ -1,10 +1,10 @@
 #include <app.h>
 
 #include <array>
-#include <cstdint>
 #include <cstring>
 #include <iostream>
-#include <optional>
+#include <map>
+#include <tuple>
 #include <vector>
 
 #include <config.h>
@@ -15,6 +15,7 @@
 #include <GLFW/glfw3.h>
 
 using VulkanRenderer::Application;
+using VulkanRenderer::QueueFamilyIndices;
 
 namespace Cst
 {
@@ -28,63 +29,6 @@ constexpr bool enableValidationLayers = true;
 
 static const float singleQueuePriority = 1.0f;
 } // namespace Cst
-
-namespace
-{
-struct QueueFamilyIndices
-{
-    std::optional<uint32_t> graphicsFamily;
-
-    bool IsComplete() const { return graphicsFamily.has_value(); }
-};
-
-QueueFamilyIndices FindQueueFamilies(VkPhysicalDevice device)
-{
-    QueueFamilyIndices indices;
-
-    uint32_t queueFamilyCount = 0;
-    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
-
-    std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
-
-    uint32_t i = 0;
-
-    for (VkQueueFamilyProperties& properties : queueFamilies)
-    {
-        if (!!(properties.queueFlags & VK_QUEUE_GRAPHICS_BIT))
-            indices.graphicsFamily = i;
-
-        if (indices.IsComplete())
-            break;
-
-        ++i;
-    }
-
-    return indices;
-}
-
-bool IsSuitableDevice(VkPhysicalDevice device)
-{
-    // Gather properties of the device
-    VkPhysicalDeviceProperties deviceProperties;
-    vkGetPhysicalDeviceProperties(device, &deviceProperties);
-
-    // Also gather features of the device
-    VkPhysicalDeviceFeatures deviceFeatures;
-    vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
-
-    if (VulkanRenderer::Parameters().verbose())
-    {
-        std::cout << VulkanRenderer::Utils::PhysicalDevicePropertiesDump(deviceProperties) << std::endl;
-        std::cout << VulkanRenderer::Utils::PhysicalDeviceFeaturesDump(deviceFeatures) << std::endl;
-    }
-
-    // TODO: Add more capabilities as we need it.
-    QueueFamilyIndices indices = FindQueueFamilies(device);
-    return indices.IsComplete();
-}
-} // namespace
 
 Application::Application(int width, int height, const char* windowName)
     : m_width(width)
@@ -151,17 +95,21 @@ int Application::InitVulkan()
     if (m_initialized)
         return 0;
 
-    int res = CreateInstance();
-    if (res != 0)
-        return res;
+    // clang-format off
+    auto AllInitFunctions = {
+        &Application::CreateInstance,
+        &Application::CreateSurface,
+        &Application::PickPhysicalDevice,
+        &Application::CreateLogicalDevice
+    };
+    // clang-format on
 
-    res = PickPhysicalDevice();
-    if (res != 0)
-        return res;
-
-    res = CreateLogicalDevice();
-    if (res != 0)
-        return res;
+    for (auto Func : AllInitFunctions)
+    {
+        int res = (this->*Func)();
+        if (res != 0)
+            return res;
+    }
 
     return 0;
 }
@@ -251,6 +199,14 @@ int Application::CreateInstance()
     return 0;
 }
 
+int Application::CreateSurface()
+{
+    if (glfwCreateWindowSurface(m_instance, m_window, nullptr, &m_surface) != VK_SUCCESS)
+        return -1;
+
+    return 0;
+}
+
 int Application::PickPhysicalDevice()
 {
     uint32_t nbDevicesFound = 0;
@@ -307,11 +263,42 @@ int Application::PickPhysicalDevice()
 int Application::CreateLogicalDevice()
 {
     QueueFamilyIndices indices = FindQueueFamilies(m_physicalDevice);
-    VkDeviceQueueCreateInfo queueCreateInfo{};
-    queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-    queueCreateInfo.queueFamilyIndex = indices.graphicsFamily.value();
-    queueCreateInfo.queueCount = 1;
-    queueCreateInfo.pQueuePriorities = &Cst::singleQueuePriority;
+
+    // Store information on all queues we want to gather and their family queue index.
+    // clang-format off
+    using AllQueuesInfos = std::vector<std::tuple<uint32_t, VkQueue*, const char*>>;
+    AllQueuesInfos allQueues = {
+        {indices.graphicsFamily.value(), &m_graphicsQueue, "graphic"},
+        {indices.presentFamily.value(), &m_presentQueue, "presentation"}
+    };
+    // clang-format on
+
+    // But each queue needs to have a unique family queue index.
+    // It is possible for example that graphicQueue and presentQueue have the same
+    // family queue index.
+    // To be sure we only create one queue for this, we keep the unique indexes in a map.
+    std::map<uint32_t, AllQueuesInfos> mapQueueIndexes;
+
+    // Gather all create structs in this vector
+    std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
+
+    for (auto& queue : allQueues)
+    {
+        uint32_t queueFamilyIndex = std::get<uint32_t>(queue);
+        auto it = mapQueueIndexes.find(queueFamilyIndex);
+        if (it == mapQueueIndexes.end())
+        {
+            it = mapQueueIndexes.emplace(queueFamilyIndex, AllQueuesInfos()).first;
+
+            VkDeviceQueueCreateInfo& queueCreateInfo = queueCreateInfos.emplace_back();
+            queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+            queueCreateInfo.queueFamilyIndex = queueFamilyIndex;
+            queueCreateInfo.queueCount = 1;
+            queueCreateInfo.pQueuePriorities = &Cst::singleQueuePriority;
+        }
+
+        it->second.emplace_back(queue);
+    }
 
     // We need to ask for specific features if we want to use them.
     // For now, not used
@@ -319,8 +306,8 @@ int Application::CreateLogicalDevice()
 
     VkDeviceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    createInfo.queueCreateInfoCount = 1;
-    createInfo.pQueueCreateInfos = &queueCreateInfo;
+    createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
+    createInfo.pQueueCreateInfos = queueCreateInfos.data();
     createInfo.pEnabledFeatures = &deviceFeatures;
 
     if (vkCreateDevice(m_physicalDevice, &createInfo, nullptr, &m_device) != VK_SUCCESS)
@@ -330,13 +317,22 @@ int Application::CreateLogicalDevice()
     }
 
     // When logical device is created, we need to get a handle on all the queues we requested
-    // 0 = Index of the queue. Requested only one, so 0.
-    vkGetDeviceQueue(m_device, indices.graphicsFamily.value(), 0, &m_graphicsQueue);
-
-    if (m_graphicsQueue == nullptr)
+    uint32_t i = 0;
+    for (auto it : mapQueueIndexes)
     {
-        std::cout << "Failed to gather the graphics queue" << std::endl;
-        return -1;
+        for (auto queue : it.second)
+        {
+            VkQueue* vkQueue = std::get<VkQueue*>(queue);
+            vkGetDeviceQueue(m_device, std::get<uint32_t>(queue), static_cast<uint32_t>(i), vkQueue);
+
+            if (vkQueue == nullptr)
+            {
+                std::cout << "Failed to gather the " << std::get<const char*>(queue) << " queue" << std::endl;
+                return -1;
+            }
+        }
+
+        i++;
     }
 
     return 0;
@@ -346,6 +342,9 @@ int Application::Cleanup()
 {
     if (m_device)
         vkDestroyDevice(m_device, nullptr);
+
+    if (m_surface)
+        vkDestroySurfaceKHR(m_instance, m_surface, nullptr);
 
     if (m_instance)
         vkDestroyInstance(m_instance, nullptr);
@@ -360,4 +359,62 @@ int Application::Cleanup()
     m_initialized = false;
 
     return 0;
+}
+
+QueueFamilyIndices Application::FindQueueFamilies(VkPhysicalDevice device)
+{
+    QueueFamilyIndices indices;
+
+    uint32_t queueFamilyCount = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+
+    std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+
+    uint32_t i = 0;
+
+    for (VkQueueFamilyProperties& properties : queueFamilies)
+    {
+        // Check first if this queue family has graphic support
+        if (!!(properties.queueFlags & VK_QUEUE_GRAPHICS_BIT))
+            indices.graphicsFamily = i;
+
+        // Then check if this queue family has presentation support
+        VkBool32 presentSupport = false;
+        vkGetPhysicalDeviceSurfaceSupportKHR(device, i, m_surface, &presentSupport);
+
+        if (presentSupport)
+            indices.presentFamily = i;
+
+        if (indices.IsComplete())
+            break;
+
+        ++i;
+    }
+
+    // Then check if it supports
+    i = 0;
+
+    return indices;
+}
+
+bool Application::IsSuitableDevice(VkPhysicalDevice device)
+{
+    // Gather properties of the device
+    VkPhysicalDeviceProperties deviceProperties;
+    vkGetPhysicalDeviceProperties(device, &deviceProperties);
+
+    // Also gather features of the device
+    VkPhysicalDeviceFeatures deviceFeatures;
+    vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+
+    if (VulkanRenderer::Parameters().verbose())
+    {
+        std::cout << VulkanRenderer::Utils::PhysicalDevicePropertiesDump(deviceProperties) << std::endl;
+        std::cout << VulkanRenderer::Utils::PhysicalDeviceFeaturesDump(deviceFeatures) << std::endl;
+    }
+
+    // TODO: Add more capabilities as we need it.
+    QueueFamilyIndices indices = FindQueueFamilies(device);
+    return indices.IsComplete();
 }
