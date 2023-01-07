@@ -1,9 +1,11 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 
 struct GLFWwindow;
+struct SwapChainSupportDetails;
 struct VkDevice_T;
 struct VkInstance_T;
 struct VkPhysicalDevice_T;
@@ -12,13 +14,7 @@ struct VkSurfaceKHR_T;
 
 namespace VulkanRenderer
 {
-struct QueueFamilyIndices
-{
-    std::optional<uint32_t> graphicsFamily;
-    std::optional<uint32_t> presentFamily;
-
-    bool IsComplete() const { return graphicsFamily.has_value() && presentFamily.has_value(); }
-};
+class SwapChain;
 
 class Application
 {
@@ -42,10 +38,11 @@ private:
     int CreateLogicalDevice();
     int CreateSurface();
     int PickPhysicalDevice();
+    int CreateSwapChain();
 
     // Vulkan queue family specific
-    QueueFamilyIndices FindQueueFamilies(VkPhysicalDevice_T* device);
-    bool IsSuitableDevice(VkPhysicalDevice_T* device);
+    bool IsSuitableDevice(VkPhysicalDevice_T* device) const;
+    bool CheckDeviceExtensionSupport(VkPhysicalDevice_T* device) const;
 
     // Window specific
     bool m_initialized = false;
@@ -53,6 +50,9 @@ private:
     int m_height;
     const char* m_windowName = "";
     GLFWwindow* m_window = nullptr;
+
+    // Swap chain
+    std::unique_ptr<SwapChain> m_swapChain;
 
     // Vulkan handles
     VkInstance_T* m_instance = nullptr;

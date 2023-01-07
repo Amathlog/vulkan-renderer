@@ -8,6 +8,8 @@
 #include <vector>
 
 #include <config.h>
+#include <swapChain.h>
+#include <utils/queueFamily.h>
 #include <utils/utils.h>
 #include <utils/verboseDump.h>
 
@@ -20,6 +22,7 @@ using VulkanRenderer::QueueFamilyIndices;
 namespace Cst
 {
 constexpr std::array<const char*, 1> validationLayers = {"VK_LAYER_KHRONOS_validation"};
+constexpr std::array<const char*, 1> deviceExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
 #ifdef NDEBUG
 constexpr bool enableValidationLayers = false;
@@ -100,7 +103,8 @@ int Application::InitVulkan()
         &Application::CreateInstance,
         &Application::CreateSurface,
         &Application::PickPhysicalDevice,
-        &Application::CreateLogicalDevice
+        &Application::CreateLogicalDevice,
+        &Application::CreateSwapChain
     };
     // clang-format on
 
@@ -169,14 +173,13 @@ int Application::CreateInstance()
         std::vector<VkLayerProperties> validationLayers(validationLayersCount);
         vkEnumerateInstanceLayerProperties(&validationLayersCount, validationLayers.data());
 
-        uint32_t validationLayersValidation = VulkanRenderer::Utils::ValidateStrings(
-            Cst::validationLayers.data(), (uint32_t)Cst::validationLayers.size(), validationLayers.data(),
-            validationLayersCount,
+        int validationLayersValidation = VulkanRenderer::Utils::ValidateStrings(
+            Cst::validationLayers, validationLayers,
             [](const VkLayerProperties& layerProperty) -> const char* { return layerProperty.layerName; });
 
-        if (extensionValidation != glfwExtensionCount)
+        if (validationLayersValidation != static_cast<int>(Cst::validationLayers.size()))
         {
-            std::cout << "Extension " << glfwExtensions[extensionValidation] << " required by glfw not supported..."
+            std::cout << "Validation layer " << Cst::validationLayers[validationLayersValidation] << " not supported..."
                       << std::endl;
             return -1;
         }
@@ -262,7 +265,7 @@ int Application::PickPhysicalDevice()
 
 int Application::CreateLogicalDevice()
 {
-    QueueFamilyIndices indices = FindQueueFamilies(m_physicalDevice);
+    QueueFamilyIndices indices = VulkanRenderer::FindQueueFamilies(m_physicalDevice, m_surface);
 
     // Store information on all queues we want to gather and their family queue index.
     // clang-format off
@@ -304,13 +307,15 @@ int Application::CreateLogicalDevice()
     // For now, not used
     VkPhysicalDeviceFeatures deviceFeatures{};
 
-    VkDeviceCreateInfo createInfo{};
-    createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
-    createInfo.pQueueCreateInfos = queueCreateInfos.data();
-    createInfo.pEnabledFeatures = &deviceFeatures;
+    VkDeviceCreateInfo createDeviceInfo{};
+    createDeviceInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    createDeviceInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
+    createDeviceInfo.pQueueCreateInfos = queueCreateInfos.data();
+    createDeviceInfo.pEnabledFeatures = &deviceFeatures;
+    createDeviceInfo.enabledExtensionCount = static_cast<uint32_t>(Cst::deviceExtensions.size());
+    createDeviceInfo.ppEnabledExtensionNames = Cst::deviceExtensions.data();
 
-    if (vkCreateDevice(m_physicalDevice, &createInfo, nullptr, &m_device) != VK_SUCCESS)
+    if (vkCreateDevice(m_physicalDevice, &createDeviceInfo, nullptr, &m_device) != VK_SUCCESS)
     {
         std::cout << "Failed to create a logical device" << std::endl;
         return -1;
@@ -338,8 +343,17 @@ int Application::CreateLogicalDevice()
     return 0;
 }
 
+int Application::CreateSwapChain()
+{
+    m_swapChain = std::make_unique<VulkanRenderer::SwapChain>(m_device, m_physicalDevice, m_surface, m_window);
+    return m_swapChain->IsValid() ? 0 : -1;
+}
+
 int Application::Cleanup()
 {
+    // We need to delete the swap chain before deleting the device.
+    m_swapChain.reset();
+
     if (m_device)
         vkDestroyDevice(m_device, nullptr);
 
@@ -361,44 +375,7 @@ int Application::Cleanup()
     return 0;
 }
 
-QueueFamilyIndices Application::FindQueueFamilies(VkPhysicalDevice device)
-{
-    QueueFamilyIndices indices;
-
-    uint32_t queueFamilyCount = 0;
-    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
-
-    std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
-
-    uint32_t i = 0;
-
-    for (VkQueueFamilyProperties& properties : queueFamilies)
-    {
-        // Check first if this queue family has graphic support
-        if (!!(properties.queueFlags & VK_QUEUE_GRAPHICS_BIT))
-            indices.graphicsFamily = i;
-
-        // Then check if this queue family has presentation support
-        VkBool32 presentSupport = false;
-        vkGetPhysicalDeviceSurfaceSupportKHR(device, i, m_surface, &presentSupport);
-
-        if (presentSupport)
-            indices.presentFamily = i;
-
-        if (indices.IsComplete())
-            break;
-
-        ++i;
-    }
-
-    // Then check if it supports
-    i = 0;
-
-    return indices;
-}
-
-bool Application::IsSuitableDevice(VkPhysicalDevice device)
+bool Application::IsSuitableDevice(VkPhysicalDevice device) const
 {
     // Gather properties of the device
     VkPhysicalDeviceProperties deviceProperties;
@@ -415,6 +392,37 @@ bool Application::IsSuitableDevice(VkPhysicalDevice device)
     }
 
     // TODO: Add more capabilities as we need it.
-    QueueFamilyIndices indices = FindQueueFamilies(device);
-    return indices.IsComplete();
+    QueueFamilyIndices indices = VulkanRenderer::FindQueueFamilies(device, m_surface);
+
+    // If we didn't found all our requested queue family, early out
+    if (!indices.IsComplete())
+        return false;
+
+    // If the current device doesn't supported wanted extensions, early out
+    if (!CheckDeviceExtensionSupport(device))
+        return false;
+
+    // If the current device doesn't support all our swap chain requirements, early out
+    VulkanRenderer::SwapChainSupportDetails details{};
+    VulkanRenderer::SwapChain::FillSwapChainSupportDetails(device, m_surface, details);
+
+    if (details.formats.empty() || details.presentModes.empty())
+        return false;
+
+    return true;
+}
+
+bool Application::CheckDeviceExtensionSupport(VkPhysicalDevice device) const
+{
+    uint32_t extensionsCount = 0;
+    vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionsCount, nullptr);
+
+    std::vector<VkExtensionProperties> availableExtensions(extensionsCount);
+    vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionsCount, availableExtensions.data());
+
+    int nbFoundExtensions = VulkanRenderer::Utils::ValidateStrings(
+        Cst::deviceExtensions, availableExtensions,
+        [](const VkExtensionProperties& properties) -> const char* { return properties.extensionName; });
+
+    return nbFoundExtensions == static_cast<int>(Cst::deviceExtensions.size());
 }
