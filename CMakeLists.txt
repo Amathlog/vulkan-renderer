@@ -18,6 +18,7 @@ if (${CMAKE_BUILD_TYPE} STREQUAL "Debug" OR ${CMAKE_BUILD_TYPE} STREQUAL RelWith
 endif()
 
 set(EXTERNAL_FOLDER "${VulkanRenderer_SOURCE_DIR}/external")
+set(SHADERS_FOLDER "${VulkanRenderer_SOURCE_DIR}/shaders")
 set(MAIN_FOLDER "${VulkanRenderer_SOURCE_DIR}/src")
 
 if(MSVC)
@@ -33,4 +34,5 @@ set(CMAKE_CXX_FLAGS_DEBUG "-g")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 endif(WIN32)
 
+add_subdirectory("shaders")
 add_subdirectory("src")
