@@ -2,6 +2,7 @@
 
 #include <vulkan/vulkan.h>
 
+#include <array>
 #include <memory>
 
 namespace VulkanRenderer
@@ -16,6 +17,7 @@ struct GraphicPipelineConfig
     const char* vertShaderFile;
     const char* fragShaderFile;
     const char* pipelineName;
+    VkFormat swapChainFormat;
 };
 
 class GraphicPipeline
@@ -30,6 +32,9 @@ public:
     bool IsValid() const;
 
 private:
+    void CreatePipelineLayoutAndPipeline(GraphicPipelineConfig& config);
+    void CreateRenderPass(GraphicPipelineConfig& config);
+
     VkDevice m_deviceCache;
     std::unique_ptr<Shader> m_vertShader;
     std::unique_ptr<Shader> m_fragShader;
@@ -37,6 +42,7 @@ private:
     VkViewport m_viewport;
     VkRect2D m_scissors;
 
+    VkRenderPass m_renderPass;
     VkPipelineLayout m_pipelineLayout;
     VkPipeline m_pipeline;
 };

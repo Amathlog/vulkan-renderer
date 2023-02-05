@@ -8,6 +8,7 @@
 #include <vector>
 
 #include <config.h>
+#include <graphicPipeline.h>
 #include <swapChain.h>
 #include <utils/queueFamily.h>
 #include <utils/utils.h>
@@ -104,7 +105,8 @@ int Application::InitVulkan()
         &Application::CreateSurface,
         &Application::PickPhysicalDevice,
         &Application::CreateLogicalDevice,
-        &Application::CreateSwapChain
+        &Application::CreateSwapChain,
+        &Application::CreateGraphicPipeline
     };
     // clang-format on
 
@@ -349,9 +351,30 @@ int Application::CreateSwapChain()
     return m_swapChain->IsValid() ? 0 : -1;
 }
 
+int Application::CreateGraphicPipeline()
+{
+    if (!m_swapChain)
+    {
+        return -1;
+    }
+
+    VulkanRenderer::GraphicPipelineConfig config;
+    config.device = m_device;
+    config.pipelineName = "main";
+    config.viewportHeight = m_height;
+    config.viewportWidth = m_width;
+    config.fragShaderFile = "shaders/simple.frag.spv";
+    config.vertShaderFile = "shaders/simple.vert.spv";
+    config.swapChainFormat = m_swapChain->GetFormat();
+
+    m_graphicPipeline = std::make_unique<VulkanRenderer::GraphicPipeline>(config);
+    return m_graphicPipeline->IsValid() ? 0 : -1;
+}
+
 int Application::Cleanup()
 {
-    // We need to delete the swap chain before deleting the device.
+    // We need to delete the swap chain and graphic pipeline before deleting the device.
+    m_graphicPipeline.reset();
     m_swapChain.reset();
 
     if (m_device)

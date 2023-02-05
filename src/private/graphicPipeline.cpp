@@ -12,7 +12,65 @@ using VulkanRenderer::ShaderType;
 
 GraphicPipeline::GraphicPipeline(GraphicPipelineConfig& config)
     : m_deviceCache(config.device)
+    , m_renderPass(VK_NULL_HANDLE)
+    , m_pipeline(VK_NULL_HANDLE)
+    , m_pipelineLayout(VK_NULL_HANDLE)
 {
+    CreateRenderPass(config);
+    CreatePipelineLayoutAndPipeline(config);
+}
+
+void GraphicPipeline::CreateRenderPass(GraphicPipelineConfig& config)
+{
+    VkAttachmentDescription colorAttachment{};
+    // We need to have exactly the same format as the swap chain
+    colorAttachment.format = config.swapChainFormat;
+    // No multisampling for now, so use only a single sample
+    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    // Nothing fancy done while loading/storing color/depth/stencil data
+    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    // Don't care about the previous image layout, and the final layout
+    // is in our swap chain
+    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    // Reference for the above description.
+    // Will be at the index 0 for the glsl layout
+    VkAttachmentReference colorAttachmentRef{};
+    colorAttachmentRef.attachment = 0;
+    colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    // For now we only have a single subpass
+    VkSubpassDescription subpassDesc{};
+    subpassDesc.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpassDesc.colorAttachmentCount = 1;
+    subpassDesc.pColorAttachments = &colorAttachmentRef;
+
+    // Finally create the renderpass
+    VkRenderPassCreateInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    renderPassInfo.attachmentCount = 1;
+    renderPassInfo.pAttachments = &colorAttachment;
+    renderPassInfo.subpassCount = 1;
+    renderPassInfo.pSubpasses = &subpassDesc;
+
+    if (vkCreateRenderPass(m_deviceCache, &renderPassInfo, nullptr, &m_renderPass) != VK_SUCCESS)
+    {
+        std::cout << "Failed to create the render pass" << std::endl;
+        m_renderPass = VK_NULL_HANDLE;
+    }
+}
+
+void GraphicPipeline::CreatePipelineLayoutAndPipeline(GraphicPipelineConfig& config)
+{
+    if (m_renderPass == VK_NULL_HANDLE)
+    {
+        return;
+    }
+
     // Step 1: Shaders
     m_vertShader = Shader::CreateFromFile(m_deviceCache, ShaderType::Vertex, config.vertShaderFile);
     if (!m_vertShader)
@@ -28,7 +86,7 @@ GraphicPipeline::GraphicPipeline(GraphicPipelineConfig& config)
         return;
     }
 
-    std::array<VkPipelineShaderStageCreateInfo, 2> shaderStageInfos;
+    std::array<VkPipelineShaderStageCreateInfo, 2> shaderStageInfos{};
     for (auto i = 0; i < 2; ++i)
     {
         shaderStageInfos[i].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -138,15 +196,42 @@ GraphicPipeline::GraphicPipeline(GraphicPipelineConfig& config)
         m_pipelineLayout = VK_NULL_HANDLE;
         return;
     }
+
+    // And finally create the pipeline
+    VkGraphicsPipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineInfo.stageCount = 2;
+    pipelineInfo.pStages = shaderStageInfos.data();
+    pipelineInfo.pVertexInputState = &vertexInputInfo;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = nullptr; // Optional
+    pipelineInfo.pColorBlendState = &colorBlending;
+    pipelineInfo.pDynamicState = &dynamicState;
+    pipelineInfo.layout = m_pipelineLayout;
+    pipelineInfo.renderPass = m_renderPass;
+    pipelineInfo.subpass = 0;
+    pipelineInfo.basePipelineHandle = VK_NULL_HANDLE; // Optional
+    pipelineInfo.basePipelineIndex = -1;              // Optional
+
+    if (vkCreateGraphicsPipelines(m_deviceCache, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_pipeline) != VK_SUCCESS)
+    {
+        std::cout << "Failed to create pipeline" << std::endl;
+        m_pipeline = VK_NULL_HANDLE;
+    }
 }
 
 GraphicPipeline::~GraphicPipeline()
 {
     vkDestroyPipeline(m_deviceCache, m_pipeline, nullptr);
     vkDestroyPipelineLayout(m_deviceCache, m_pipelineLayout, nullptr);
+    vkDestroyRenderPass(m_deviceCache, m_renderPass, nullptr);
 }
 
 bool GraphicPipeline::IsValid() const
 {
-    return m_vertShader && m_fragShader && m_pipelineLayout != VK_NULL_HANDLE && m_pipeline != VK_NULL_HANDLE;
+    return m_vertShader && m_fragShader && m_pipelineLayout != VK_NULL_HANDLE && m_pipeline != VK_NULL_HANDLE &&
+           m_renderPass != VK_NULL_HANDLE;
 }

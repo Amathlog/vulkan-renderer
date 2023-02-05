@@ -14,6 +14,7 @@ struct VkSurfaceKHR_T;
 
 namespace VulkanRenderer
 {
+class GraphicPipeline;
 class SwapChain;
 
 class Application
@@ -39,6 +40,7 @@ private:
     int CreateSurface();
     int PickPhysicalDevice();
     int CreateSwapChain();
+    int CreateGraphicPipeline();
 
     // Vulkan queue family specific
     bool IsSuitableDevice(VkPhysicalDevice_T* device) const;
@@ -51,8 +53,8 @@ private:
     const char* m_windowName = "";
     GLFWwindow* m_window = nullptr;
 
-    // Swap chain
     std::unique_ptr<SwapChain> m_swapChain;
+    std::unique_ptr<GraphicPipeline> m_graphicPipeline;
 
     // Vulkan handles
     VkInstance_T* m_instance = nullptr;
