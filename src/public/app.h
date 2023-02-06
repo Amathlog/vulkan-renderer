@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -22,6 +23,8 @@ namespace VulkanRenderer
 {
 class GraphicPipeline;
 class SwapChain;
+
+constexpr int maxFramesInFlight = 2; // Allow the CPU to prepare next frame while GPU is rendering the other.
 
 class Application
 {
@@ -79,11 +82,12 @@ private:
     VkSurfaceKHR_T* m_surface = nullptr;
     std::vector<VkFramebuffer_T*> m_framebuffers{};
     VkCommandPool_T* m_commandPool = nullptr;
-    VkCommandBuffer_T* m_commandBuffer = nullptr;
+    std::array<VkCommandBuffer_T*, maxFramesInFlight> m_commandBuffers{};
 
     // Sync objects
-    VkSemaphore_T* m_imageAvailableSemaphore = nullptr;
-    VkSemaphore_T* m_renderFinishedSemaphore = nullptr;
-    VkFence_T* m_inFlightFence = nullptr;
+    std::array<VkSemaphore_T*, maxFramesInFlight> m_imageAvailableSemaphores{};
+    std::array<VkSemaphore_T*, maxFramesInFlight> m_renderFinishedSemaphores{};
+    std::array<VkFence_T*, maxFramesInFlight> m_inFlightFences{};
+    int m_currentFrame = 0;
 };
 } // namespace VulkanRenderer
