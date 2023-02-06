@@ -27,6 +27,7 @@ public:
     ~GraphicPipeline();
 
     VkViewport& GetViewport() { return m_viewport; }
+    VkRenderPass& GetRenderPass() { return m_renderPass; }
     VkRect2D& GetScissors() { return m_scissors; }
 
     bool IsValid() const;

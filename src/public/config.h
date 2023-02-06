@@ -12,6 +12,8 @@ struct VulkanParameters : bsc::CommandLineParameters
          .argumentName = "DEVICE",
          .doc = "Force given physical device. Use verbose to know order of devices."}};
 
+    const char* execPath = "";
+
     static void Initialize(int argc, char* argv[])
     {
         if (s_instance != nullptr)
@@ -21,6 +23,9 @@ struct VulkanParameters : bsc::CommandLineParameters
         s_instance = new VulkanParameters();
         s_instance->parser->prepareParser(parser.parseConfiguration, parser.parser);
         s_instance->parser->parse(argc, argv);
+
+        if (argc > 0)
+            s_instance->execPath = argv[0];
     }
 
     ~VulkanParameters() { delete s_instance; }

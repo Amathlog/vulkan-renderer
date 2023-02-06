@@ -106,7 +106,8 @@ int Application::InitVulkan()
         &Application::PickPhysicalDevice,
         &Application::CreateLogicalDevice,
         &Application::CreateSwapChain,
-        &Application::CreateGraphicPipeline
+        &Application::CreateGraphicPipeline,
+        &Application::CreateFramebuffers
     };
     // clang-format on
 
@@ -371,8 +372,51 @@ int Application::CreateGraphicPipeline()
     return m_graphicPipeline->IsValid() ? 0 : -1;
 }
 
+int Application::CreateFramebuffers()
+{
+    if (!m_swapChain || !m_graphicPipeline)
+    {
+        return -1;
+    }
+
+    std::vector<VkImageView>& imageViews = m_swapChain->GetImageViews();
+
+    m_framebuffers.resize(imageViews.size());
+
+    VkFramebufferCreateInfo framebufferInfo{};
+    framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    framebufferInfo.renderPass = m_graphicPipeline->GetRenderPass();
+    framebufferInfo.attachmentCount = 1;
+    framebufferInfo.width = m_swapChain->GetExtent().width;
+    framebufferInfo.height = m_swapChain->GetExtent().height;
+    framebufferInfo.layers = 1;
+
+    for (size_t i = 0; i < m_framebuffers.size(); ++i)
+    {
+        framebufferInfo.pAttachments = &imageViews[i];
+
+        if (vkCreateFramebuffer(m_device, &framebufferInfo, nullptr, &m_framebuffers[i]) != VK_SUCCESS)
+        {
+            std::cout << "Failed to create framebuffers" << std::endl;
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
 int Application::Cleanup()
 {
+    for (VkFramebuffer& framebuffer : m_framebuffers)
+    {
+        if (framebuffer != VK_NULL_HANDLE)
+        {
+            vkDestroyFramebuffer(m_device, framebuffer, nullptr);
+        }
+    }
+
+    m_framebuffers.clear();
+
     // We need to delete the swap chain and graphic pipeline before deleting the device.
     m_graphicPipeline.reset();
     m_swapChain.reset();

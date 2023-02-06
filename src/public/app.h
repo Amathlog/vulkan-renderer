@@ -3,10 +3,12 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <vector>
 
 struct GLFWwindow;
 struct SwapChainSupportDetails;
 struct VkDevice_T;
+struct VkFramebuffer_T;
 struct VkInstance_T;
 struct VkPhysicalDevice_T;
 struct VkQueue_T;
@@ -41,6 +43,7 @@ private:
     int PickPhysicalDevice();
     int CreateSwapChain();
     int CreateGraphicPipeline();
+    int CreateFramebuffers();
 
     // Vulkan queue family specific
     bool IsSuitableDevice(VkPhysicalDevice_T* device) const;
@@ -63,5 +66,6 @@ private:
     VkQueue_T* m_graphicsQueue = nullptr;
     VkQueue_T* m_presentQueue = nullptr;
     VkSurfaceKHR_T* m_surface = nullptr;
+    std::vector<VkFramebuffer_T*> m_framebuffers{};
 };
 } // namespace VulkanRenderer

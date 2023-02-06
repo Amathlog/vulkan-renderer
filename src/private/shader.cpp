@@ -1,5 +1,7 @@
 #include <shader.h>
 
+#include <config.h>
+
 #include <vulkan/vulkan.h>
 
 #include <filesystem>
@@ -33,8 +35,17 @@ std::unique_ptr<Shader> Shader::CreateFromFile(VkDevice_T* device, ShaderType ty
 {
     if (!std::filesystem::exists(filePath))
     {
-        std::cout << "File " << filePath << "was not found." << std::endl;
-        return nullptr;
+        // Try to look next to the executable also
+        std::filesystem::path execPath =
+            std::filesystem::path(VulkanRenderer::VulkanParameters::GetInstance().execPath).parent_path();
+
+        execPath /= filePath;
+
+        if (!std::filesystem::exists(execPath))
+        {
+            std::cout << "File " << filePath << " was not found." << std::endl;
+            return nullptr;
+        }
     }
 
     std::ifstream fileStream;
