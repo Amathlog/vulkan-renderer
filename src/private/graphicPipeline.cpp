@@ -35,7 +35,7 @@ void GraphicPipeline::CreateRenderPass(GraphicPipelineConfig& config)
     // Don't care about the previous image layout, and the final layout
     // is in our swap chain
     colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
     // Reference for the above description.
     // Will be at the index 0 for the glsl layout
@@ -49,6 +49,17 @@ void GraphicPipeline::CreateRenderPass(GraphicPipelineConfig& config)
     subpassDesc.colorAttachmentCount = 1;
     subpassDesc.pColorAttachments = &colorAttachmentRef;
 
+    // But we still have "implicit" subpasses (before and after), so we need to add dependencies
+    VkSubpassDependency dependency{};
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0; // Our subpass
+
+    // We need for the swap chain to finish reading from the image before accessing it
+    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.srcAccessMask = 0;
+    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
     // Finally create the renderpass
     VkRenderPassCreateInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -56,6 +67,8 @@ void GraphicPipeline::CreateRenderPass(GraphicPipelineConfig& config)
     renderPassInfo.pAttachments = &colorAttachment;
     renderPassInfo.subpassCount = 1;
     renderPassInfo.pSubpasses = &subpassDesc;
+    renderPassInfo.dependencyCount = 1;
+    renderPassInfo.pDependencies = &dependency;
 
     if (vkCreateRenderPass(m_deviceCache, &renderPassInfo, nullptr, &m_renderPass) != VK_SUCCESS)
     {
