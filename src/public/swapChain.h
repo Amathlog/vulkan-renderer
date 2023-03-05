@@ -19,7 +19,7 @@ class SwapChain
 {
 public:
     SwapChain(VkDevice device, VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, GLFWwindow* window,
-              VkSwapchainKHR oldSwapChain = VK_NULL_HANDLE);
+              SwapChain* oldSwapChain = nullptr);
     ~SwapChain();
 
     bool IsValid() const { return m_swapChain != VK_NULL_HANDLE && !m_imageViews.empty(); }

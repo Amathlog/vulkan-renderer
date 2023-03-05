@@ -13,7 +13,7 @@ using VulkanRenderer::SwapChain;
 using VulkanRenderer::SwapChainSupportDetails;
 
 SwapChain::SwapChain(VkDevice device, VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, GLFWwindow* window,
-                     VkSwapchainKHR oldSwapChain)
+                     SwapChain* oldSwapChain)
     : m_deviceCache(device)
 {
     SwapChainSupportDetails swapChainSupport;
@@ -63,7 +63,7 @@ SwapChain::SwapChain(VkDevice device, VkPhysicalDevice physicalDevice, VkSurface
     createInfo.clipped = VK_TRUE;
 
     // In case of an old swap chain, we pass it there.
-    createInfo.oldSwapchain = oldSwapChain;
+    createInfo.oldSwapchain = oldSwapChain ? oldSwapChain->m_swapChain : VK_NULL_HANDLE;
 
     if (vkCreateSwapchainKHR(device, &createInfo, nullptr, &m_swapChain) != VK_SUCCESS)
     {

@@ -44,6 +44,8 @@ private:
     int InitVulkan();
     int DrawFrame();
 
+    static void FramebufferResizeCallback(GLFWwindow* window, int width, int height);
+
     // Init vulkan subfuctions
     int CreateInstance();
     int CreateLogicalDevice();
@@ -55,6 +57,10 @@ private:
     int CreateCommandPool();
     int CreateCommandBuffer();
     int CreateSyncObjects();
+
+    // Swap chain specific
+    int RecreateSwapChain();
+    int CleanupSwapChain();
 
     // Command buffer
     int RecordCommandBuffer(VkCommandBuffer_T* commandBuffer, uint32_t imageIndex);
@@ -88,6 +94,9 @@ private:
     std::array<VkSemaphore_T*, maxFramesInFlight> m_imageAvailableSemaphores{};
     std::array<VkSemaphore_T*, maxFramesInFlight> m_renderFinishedSemaphores{};
     std::array<VkFence_T*, maxFramesInFlight> m_inFlightFences{};
+
+    // Utility
+    bool m_framebufferResized = false;
     int m_currentFrame = 0;
 };
 } // namespace VulkanRenderer

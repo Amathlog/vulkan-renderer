@@ -77,6 +77,12 @@ int Application::Run()
     return 0;
 }
 
+void Application::FramebufferResizeCallback(GLFWwindow* window, int width, int height)
+{
+    if (Application* App = reinterpret_cast<Application*>(glfwGetWindowUserPointer(window)))
+        App->m_framebufferResized = true;
+}
+
 int Application::InitWindow()
 {
     glfwInit();
@@ -84,10 +90,9 @@ int Application::InitWindow()
     // First hint glfw to not initialize an OpenGL context
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
-    // Don't allow resize for now
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-
     m_window = glfwCreateWindow(m_width, m_height, m_windowName, nullptr, nullptr);
+    glfwSetWindowUserPointer(m_window, this);
+    glfwSetFramebufferSizeCallback(m_window, FramebufferResizeCallback);
 
     if (m_window == nullptr)
     {
@@ -355,7 +360,10 @@ int Application::CreateLogicalDevice()
 
 int Application::CreateSwapChain()
 {
-    m_swapChain = std::make_unique<VulkanRenderer::SwapChain>(m_device, m_physicalDevice, m_surface, m_window);
+    // To allow re-use of the swap chain, we will pass the old swap chain
+    // So it will create a new one (using the previous one) and destroy the previous one.
+    m_swapChain =
+        std::make_unique<VulkanRenderer::SwapChain>(m_device, m_physicalDevice, m_surface, m_window, m_swapChain.get());
     return m_swapChain->IsValid() ? 0 : -1;
 }
 
@@ -656,13 +664,29 @@ int Application::DrawFrame()
     // At the start of our frame, we wait until the previous frame has rendered
     vkWaitForFences(m_device, 1, &m_inFlightFences[m_currentFrame], VK_TRUE, UINT64_MAX);
 
-    vkResetFences(m_device, 1, &m_inFlightFences[m_currentFrame]);
-
     // Acquire an image from the swap chain, will signal the semaphore when it's done.
     // We use no fences here.
     uint32_t imageIndex = 0;
-    vkAcquireNextImageKHR(m_device, m_swapChain->GetSwapChain(), UINT64_MAX, m_imageAvailableSemaphores[m_currentFrame],
-                          VK_NULL_HANDLE, &imageIndex);
+    VkResult result = vkAcquireNextImageKHR(m_device, m_swapChain->GetSwapChain(), UINT64_MAX,
+                                            m_imageAvailableSemaphores[m_currentFrame], VK_NULL_HANDLE, &imageIndex);
+
+    // When we acquire the next image, we swap chain might be out of date,
+    // in that case, we recreate it and exit
+    if (result == VK_ERROR_OUT_OF_DATE_KHR)
+    {
+        RecreateSwapChain();
+        return 0;
+    }
+    else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+    {
+        // We can also have a suboptimal swap chain, but that's OK, we can still use it.
+        // If it is either a success nor a suboptimal, we need to exit.
+        std::cout << "Failed to acquire swap chain image" << std::endl;
+        return -1;
+    }
+
+    // Reset fences only after we know we don't have to recreate the swap chain, to avoid a deadlock
+    vkResetFences(m_device, 1, &m_inFlightFences[m_currentFrame]);
 
     vkResetCommandBuffer(m_commandBuffers[m_currentFrame], 0);
 
@@ -702,7 +726,14 @@ int Application::DrawFrame()
     presentInfo.pSwapchains = swapChains;
     presentInfo.pImageIndices = &imageIndex;
 
-    if (vkQueuePresentKHR(m_graphicsQueue, &presentInfo) != VK_SUCCESS)
+    VkResult presentResult = vkQueuePresentKHR(m_graphicsQueue, &presentInfo);
+
+    if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR || m_framebufferResized)
+    {
+        m_framebufferResized = false;
+        RecreateSwapChain();
+    }
+    else if (presentResult != VK_SUCCESS)
     {
         std::cout << "Failed to present..." << std::endl;
         return -1;
@@ -712,4 +743,37 @@ int Application::DrawFrame()
         m_currentFrame = 0;
 
     return 0;
+}
+
+int Application::RecreateSwapChain()
+{
+    // If we ever have to recreate the swap chain, check if we are in a minimized window.
+    // If so wait until we re-open the window.
+    int width = 0, height = 0;
+    glfwGetFramebufferSize(m_window, &width, &height);
+    while (width == 0 || height == 0)
+    {
+        glfwWaitEvents();
+        glfwGetFramebufferSize(m_window, &width, &height);
+    }
+
+    // First we need to wait until any task on the GPU is done
+    vkDeviceWaitIdle(m_device);
+
+    // Then we will clean the frame buffers
+    for (VkFramebuffer& framebuffer : m_framebuffers)
+    {
+        if (framebuffer != VK_NULL_HANDLE)
+            vkDestroyFramebuffer(m_device, framebuffer, nullptr);
+    }
+
+    m_framebuffers.clear();
+
+    // We will create the swap chain (will re-use the old one, and clean that one up)
+    int res = CreateSwapChain();
+    if (res != 0)
+        return res;
+
+    // And we can re-create the framebuffers too
+    return CreateFramebuffers();
 }
